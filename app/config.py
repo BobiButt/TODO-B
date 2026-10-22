@@ -198,7 +198,7 @@ class Settings(BaseSettings):
     # any list-typed field before validators run, which would reject the
     # convenient comma-separated form. The parsed list is exposed through the
     # `cors_origin_list` property below.
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "https://todo-app-six-phi-88.vercel.app"
     cors_allow_credentials: bool = True
     # Extra regex for wildcard origins such as https://*.vercel.app
     cors_origin_regex: str = r"https://.*\.vercel\.app"
@@ -227,9 +227,9 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_model: str = "openai/gpt-4o-mini"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "groq/compound"
 
     # model_config tells pydantic-settings where to look for the .env file.
     # The absolute path first, the relative path second (last one wins).
