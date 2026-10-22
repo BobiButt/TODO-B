@@ -1,0 +1,57 @@
+# ============================================================================
+# FILE:       backend-test/requirements.txt
+# PURPOSE:    Every Python package the TaskFlow backend needs at RUNTIME.
+#             Vercel installs this file during the build step.
+# HOW IT WORKS: One package per line as `name==exact.version` so every
+#             machine and every deployment gets an identical environment.
+#             Development-only packages (pytest & friends) live in
+#             requirements-dev.txt so the deployed bundle stays small and the
+#             cold start stays fast.
+# USED BY / DEPENDS ON: Vercel build step, `pip install -r requirements.txt`.
+# KEY CONCEPTS: dependency pinning, runtime vs development dependencies.
+# ============================================================================
+
+# --- Web framework ---------------------------------------------------------
+# fastapi gives async HTTP routes + automatic OpenAPI docs from type hints
+fastapi==0.115.6
+# uvicorn is the ASGI server used for local development (Vercel uses its own)
+uvicorn[standard]==0.32.1
+# python-multipart lets FastAPI parse multipart/form-data (CSV/JSON upload)
+python-multipart==0.0.19
+
+# --- Database layer --------------------------------------------------------
+# sqlalchemy 2.0 is the ORM: Python classes mapped to tables
+SQLAlchemy==2.0.36
+# asyncpg is the non-blocking PostgreSQL driver used by the async engine
+asyncpg==0.30.0
+# alembic is the migration tool: versioned scripts for schema changes
+alembic==1.14.0
+
+# --- Configuration & validation --------------------------------------------
+# pydantic v2 validates request/response data and powers the OpenAPI schema
+pydantic==2.10.3
+# pydantic-settings loads .env files into typed Python settings objects
+pydantic-settings==2.6.1
+# email-validator makes Pydantic's EmailStr type work (unique user emails)
+email-validator==2.2.0
+
+# --- Authentication & security ---------------------------------------------
+# python-jose[cryptography] for JWT encode/decode and verification
+python-jose[cryptography]==3.3.0
+# passlib[bcrypt] for password hashing
+passlib[bcrypt]==1.7.4
+# bcrypt 4.0.1 is the last version fully supported by passlib 1.7.4
+bcrypt==4.0.1
+# google-auth for verifying Google ID tokens
+google-auth==2.33.0
+# aiosmtplib for async SMTP email (OTP delivery)
+# NOTE: 3.0.3 was never published to PyPI — 3.0.2 is the latest 3.x release.
+aiosmtplib==3.0.2
+
+# --- Runtime helpers --------------------------------------------------------
+# httpx is the async HTTP client used by the AI assistant to call providers
+httpx==0.28.1
+# anyio is required by FastAPI/httpx for async compatibility layers
+anyio==4.7.0
+# python-dotenv is used internally by pydantic-settings to read .env
+python-dotenv==1.0.1

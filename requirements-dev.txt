@@ -1,0 +1,17 @@
+# ============================================================================
+# FILE:       backend-test/requirements-dev.txt
+# PURPOSE:    Development-only dependencies. NOT installed on Vercel.
+# HOW IT WORKS: `pip install -r requirements-dev.txt` first installs the
+#             runtime requirements (via the -r line) and then the test tools.
+# USED BY / DEPENDS ON: local development, `pytest`.
+# KEY CONCEPTS: keeping the deployed bundle small.
+# ============================================================================
+
+# Runtime dependencies (the exact list Vercel installs).
+-r requirements.txt
+
+# --- Testing ----------------------------------------------------------------
+# pytest is the test runner (discovers files named test_*.py)
+pytest==8.3.4
+# pytest-asyncio lets pytest execute `async def` test functions
+pytest-asyncio==0.24.0
