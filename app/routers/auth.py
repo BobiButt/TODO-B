@@ -1,6 +1,12 @@
 """Authentication HTTP routes: register, login, OTP, Google OAuth, me, refresh."""
-
 from datetime import datetime, timedelta, timezone
+
+# Brevo imports
+from brevo import AsyncBrevo
+from brevo.transactional_emails import (
+    SendTransacEmailRequestSender,
+    SendTransacEmailRequestToItem,
+)
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +15,7 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
-from app.schemas.common import AuthProvider, Role
+from app.schemas.common import AuthProvider
 from app.schemas.user import (
     GoogleAuth,
     OTPResend,
@@ -27,7 +33,6 @@ from app.services.auth import (
     get_password_hash,
     get_user_by_email,
     get_user_by_google_id,
-    send_otp_email,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -35,6 +40,38 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+async def send_otp_via_brevo(email: str, code: str) -> None:
+    """Sends the OTP using the Brevo API."""
+    client = AsyncBrevo(api_key=settings.brevo_api_key)
+    
+    html_content = f"""
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px;">
+        <h2 style="color: #1f2937; margin-bottom: 8px;">Verify your email</h2>
+        <p style="color: #4b5563; font-size: 15px;">Use the code below to verify your TaskFlow account:</p>
+        <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; text-align: center; margin: 24px 0;">
+            <span style="font-size: 28px; font-weight: 700; letter-spacing: 6px; color: #111827;">{code}</span>
+        </div>
+        <p style="color: #9ca3af; font-size: 13px;">This code expires in {settings.otp_expire_minutes} minutes.</p>
+    </div>
+    """
+    
+    try:
+        await client.transactional_emails.send_transac_email(
+            subject="Your TaskFlow verification code",
+            html_content=html_content,
+            sender=SendTransacEmailRequestSender(
+                name="TaskFlow",
+                email=settings.brevo_sender_email,
+            ),
+            to=[SendTransacEmailRequestToItem(email=email)],
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to send verification email: {exc}",
+        ) from exc
 
 
 @router.post(
@@ -72,7 +109,7 @@ async def register(
     await db.commit()
     await db.refresh(user)
 
-    await send_otp_email(payload.email, otp_code, db)
+    await send_otp_via_brevo(payload.email, otp_code)
 
     return Token(
         access_token="",
@@ -175,7 +212,7 @@ async def resend_otp(
     user.otp_expires_at = _utc_now() + timedelta(minutes=settings.otp_expire_minutes)
     await db.commit()
 
-    await send_otp_email(payload.email, otp_code, db)
+    await send_otp_via_brevo(payload.email, otp_code)
 
 
 @router.post(

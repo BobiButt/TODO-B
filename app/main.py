@@ -1,22 +1,7 @@
-# ============================================================================
-# FILE:       backend-test/app/main.py
-# PURPOSE:    FastAPI application entry point. Configures CORS, mounts the API
-#             routers under /api/v1, defines the /health heartbeat endpoint and
-#             configures interactive OpenAPI documentation.
-# HOW IT WORKS: Instantiates the FastAPI app with application metadata.
-#             Attaches CORSMiddleware and GZipMiddleware. On startup the
-#             database migrations are applied (serverless cold start); on
-#             shutdown the connection pool is closed. Every router is mounted
-#             under the configured prefix.
-# USED BY / DEPENDS ON: api/index.py (Vercel entrypoint), uvicorn
-#             app.main:app, tests/conftest.py, frontend HTTP client.
-# KEY CONCEPTS: Application factory, lifespan, CORS, API prefix mounting.
-# ============================================================================
-
 """Main FastAPI application entry point and configuration."""
-
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -37,12 +22,10 @@ from app.routers.tasks import router as tasks_router
 from app.routers.transfer import router as transfer_router
 from app.routers.users import router as users_router
 
-# Application-wide logger.
 logger = logging.getLogger("taskflow")
 
 
 def _configure_logging() -> None:
-    """Set up a sane logging configuration for a serverless container."""
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
@@ -52,21 +35,6 @@ def _configure_logging() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan context manager for startup and shutdown events.
-
-    Startup:
-        Apply pending database migrations so a fresh database works without
-        a manual migration step.
-
-    Shutdown:
-        Dispose of the connection pool (Vercel only allows ~500 ms here).
-
-    Parameters:
-        app (FastAPI): The running FastAPI application instance.
-
-    Yields:
-        None: Hands execution control to the application server.
-    """
     _configure_logging()
     logger.info(
         "TaskFlow API starting (environment=%s, vercel=%s)",
@@ -74,27 +42,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.is_vercel,
     )
 
-    # Configuration problems are reported, never raised: a boot failure would
-    # turn into an opaque platform-level 404 with no usable logs.
     for problem in settings.config_errors:
         logger.error("Configuration problem: %s", problem)
 
-    # Never let a migration problem stop the function from booting: the
-    # /health endpoint reports the real state and the logs carry the reason.
-    try:
-        await apply_migrations()
-    except Exception:  # noqa: BLE001 — cold start must not explode
-        logger.exception("Migration step failed during startup.")
+    # Migrations are timeout-protected so startup can never hang.
+    if settings.auto_migrate:
+        try:
+            await asyncio.wait_for(apply_migrations(), timeout=45.0)
+            logger.info("Startup migrations completed.")
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Startup migrations timed out after 45s. "
+                "Run `alembic upgrade head` manually to finish."
+            )
+        except Exception:
+            logger.exception("Startup migrations failed; continuing anyway.")
 
     yield
 
     try:
         await dispose_engine()
-    except Exception:  # noqa: BLE001 — shutdown is best effort
+    except Exception:
         logger.warning("Engine disposal during shutdown failed.", exc_info=True)
 
 
-# Create FastAPI application instance with descriptive title and OpenAPI docs paths.
 app = FastAPI(
     title="TaskFlow API",
     description=(
@@ -108,11 +79,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Compress JSON responses — a large task list shrinks by ~80%.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
-# Configure Cross-Origin Resource Sharing (CORS) so the Vite dev server and
-# the deployed frontend can call the API.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -125,29 +93,7 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def ensure_schema_ready(request: Request, call_next):
-    """Guarantee the schema is migrated before the first request is served.
-
-    Vercel runs the FastAPI lifespan on cold start, so this middleware is
-    normally a no-op. It stays as a safety net for runtimes that skip the
-    lifespan, and it never delays a request once the migration has run.
-    """
-    if not request.url.path.endswith("/health"):
-        try:
-            await apply_migrations()
-        except Exception:  # noqa: BLE001 — never block a request
-            logger.warning("Deferred migration check failed.", exc_info=True)
-    return await call_next(request)
-
-
-@app.middleware("http")
 async def reject_misconfigured_requests(request: Request, call_next):
-    """Answer API calls with 503 while the deployment is misconfigured.
-
-    Without this guard a placeholder ``SECRET_KEY`` would silently sign real
-    access tokens with a publicly known value. Refusing to serve the API
-    turns a security hole into an obvious, self-describing error.
-    """
     config_errors = settings.config_errors
     is_api_call = request.url.path.startswith(f"{settings.app_prefix}/")
     is_health_check = request.url.path.endswith("/health")
@@ -170,22 +116,8 @@ async def reject_misconfigured_requests(request: Request, call_next):
     return await call_next(request)
 
 
-@app.get(
-    "/health",
-    tags=["System"],
-    summary="Health check endpoint",
-    description="Returns service health status, database reachability and environment.",
-    status_code=status.HTTP_200_OK,
-)
+@app.get("/health", tags=["System"])
 async def health_check() -> JSONResponse:
-    """Service heartbeat and readiness check.
-
-    Returns:
-        JSONResponse: Status dictionary confirming the backend is alive. The
-        HTTP status is 503 when the database cannot be reached or the
-        configuration is incomplete, so a load balancer takes the instance
-        out of rotation.
-    """
     config_errors = settings.config_errors
     database_ok = not config_errors and await ping_database()
     payload = {
@@ -194,10 +126,7 @@ async def health_check() -> JSONResponse:
         "version": "1.0.0",
         "database": "connected" if database_ok else "unreachable",
         "migrations": migration_status(),
-        "configuration": {
-            "ok": not config_errors,
-            "errors": config_errors,
-        },
+        "configuration": {"ok": not config_errors, "errors": config_errors},
     }
     return JSONResponse(
         status_code=(
@@ -207,25 +136,14 @@ async def health_check() -> JSONResponse:
     )
 
 
-@app.get(
-    "/",
-    tags=["System"],
-    summary="Home / server status",
-    description="Returns a welcome message and useful links to verify the backend is running.",
-    status_code=status.HTTP_200_OK,
-)
+@app.get("/", tags=["System"])
 async def home() -> JSONResponse:
-    """Backend home endpoint.
-
-    Returns:
-        JSONResponse: Welcome message with links to the health check and API docs.
-    """
+    config_errors = settings.config_errors
     docs_hint = (
         "/docs (interactive OpenAPI documentation)"
         if settings.docs_are_enabled
         else "disabled (set DOCS_ENABLED=true to show it)"
     )
-    config_errors = settings.config_errors
     return JSONResponse(
         content={
             "message": "TaskFlow API is running",
@@ -235,15 +153,11 @@ async def home() -> JSONResponse:
             "health": "/health",
             "api_prefix": settings.app_prefix,
             "docs": docs_hint,
-            "configuration": {
-                "ok": not config_errors,
-                "errors": config_errors,
-            },
+            "configuration": {"ok": not config_errors, "errors": config_errors},
         }
     )
 
 
-# Mount versioned API routers under the configured prefix (/api/v1).
 app.include_router(auth_router, prefix=settings.app_prefix)
 app.include_router(users_router, prefix=settings.app_prefix)
 app.include_router(transfer_router, prefix=settings.app_prefix)
@@ -252,8 +166,6 @@ app.include_router(comments_router, prefix=settings.app_prefix)
 app.include_router(admin_router, prefix=settings.app_prefix)
 app.include_router(assistant_router, prefix=settings.app_prefix)
 
-# The same health check under the versioned prefix, handy for monitoring
-# tools that only know the API base URL.
 app.add_api_route(
     f"{settings.app_prefix}/health",
     health_check,
