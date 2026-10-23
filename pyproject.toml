@@ -37,6 +37,8 @@ dependencies = [
     "httpx==0.28.1",
     "anyio==4.7.0",
     "python-dotenv==1.0.1",
+    "brevo-python",
+    
 ]
 
 [tool.uv]
