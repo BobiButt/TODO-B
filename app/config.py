@@ -147,9 +147,9 @@ class Settings(BaseSettings):
     # local run does not get blocked by CORS. In production this is overridden
     # by the CORS_ORIGINS environment variable.
     cors_origins: str = (
-        "http://localhost:5173,"
-        "http://127.0.0.1:5173,"
-        "https://todo-app-six-phi-88.vercel.app"
+        # "http://localhost:5173,"
+        # "http://127.0.0.1:5173,"
+        "https://todo-f-orcin.vercel.app/"
     )
     cors_allow_credentials: bool = True
     cors_origin_regex: str = r"https://.*\.vercel\.app"
