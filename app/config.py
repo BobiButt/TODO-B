@@ -146,8 +146,8 @@ class Settings(BaseSettings):
     # FIX: localhost:5173 (Vite dev server) added to the default so a fresh
     # local run does not get blocked by CORS. In production this is overridden
     # by the CORS_ORIGINS environment variable.
-    cors_origins: str = "https://todo-f-orcin.vercel.app"
-    
+    # cors_origins: str = "https://todo-f-orcin.vercel.app"
+    cors_origins: str = "https://todo-f-orcin.vercel.app,https://todo-b-nu.vercel.app"    
     cors_allow_credentials: bool = True
     cors_origin_regex: str = r"https://.*\.vercel\.app"
 
