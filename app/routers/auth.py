@@ -122,18 +122,39 @@ async def register(
     "/login",
     response_model=Token,
     summary="Log in with email and password",
-    description="Verifies credentials and returns a JWT access token if the email is verified.",
+    description="Verifies credentials. If the email is not verified, resends a fresh OTP and returns HTTP 403 with code `email_not_verified` so the client can redirect to the OTP page for reverification.",
 )
 async def login(
     payload: UserLogin,
     db: AsyncSession = Depends(get_db),
 ) -> Token:
-    """Authenticate a user and issue a JWT."""
+    """Authenticate a user and issue a JWT, or prompt unverified users to re-verify their email."""
     user = await authenticate_user(db, payload.email, payload.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password, or email not verified.",
+            detail="Invalid email or password.",
+        )
+
+    if not user.is_verified:
+        # Credentials are correct but the email is not verified. Re-send a fresh
+        # OTP so the user can complete verification instead of being stuck.
+        otp_code = generate_otp()
+        otp_expires = _utc_now() + timedelta(minutes=settings.otp_expire_minutes)
+        user.otp_code = otp_code
+        user.otp_expires_at = otp_expires
+        await db.commit()
+
+        await send_otp_via_brevo(payload.email, otp_code)
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "email_not_verified",
+                "message": "Please verify your email before logging in.",
+                "resend_otp": True,
+                "email": payload.email,
+            },
         )
 
     token = create_access_token({"sub": str(user.id)})

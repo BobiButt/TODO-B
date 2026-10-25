@@ -94,15 +94,18 @@ async def send_otp_email(email: str, code: str, db: AsyncSession) -> bool:
 async def authenticate_user(db: AsyncSession, email: str, password: str) -> User | None:
     """Authenticate a user by email and password.
 
-    Returns the User if credentials are valid and email is verified, else None.
+    Returns the User when the email exists, uses the email provider, and the
+    password is correct — regardless of whether the email is verified. The
+    caller (the login route) decides what to do with unverified users.
+
+    Returns None when the account does not exist, is not an email/password
+    account, or the password is wrong.
     """
     stmt = select(User).where(User.email == email)
     user = (await db.execute(stmt)).scalars().first()
     if not user or user.provider != AuthProvider.EMAIL:
         return None
     if not user.password_hash or not verify_password(password, user.password_hash):
-        return None
-    if not user.is_verified:
         return None
     return user
 

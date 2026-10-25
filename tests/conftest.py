@@ -133,9 +133,9 @@ async def seeded_users(db_session: AsyncSession) -> dict[str, User]:
     Returns:
         dict[str, User]: Dictionary containing 'admin', 'user1', and 'user2'.
     """
-    admin = User(name="Ada Admin", email="admin@taskflow.dev", role=Role.ADMIN.value)
-    user1 = User(name="Alan User", email="alan@taskflow.dev", role=Role.USER.value)
-    user2 = User(name="Grace User", email="grace@taskflow.dev", role=Role.USER.value)
+    admin = User(name="Ada Admin", email="admin@taskflow.dev", role=Role.ADMIN.value, is_verified=True)
+    user1 = User(name="Alan User", email="alan@taskflow.dev", role=Role.USER.value, is_verified=True)
+    user2 = User(name="Grace User", email="grace@taskflow.dev", role=Role.USER.value, is_verified=True)
 
     db_session.add_all([admin, user1, user2])
     await db_session.commit()
