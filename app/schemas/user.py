@@ -130,6 +130,8 @@ class UserRead(BaseModel):
     email: EmailStr
     role: Role
     created_at: datetime
+    is_verified: bool = False
+    email_verified_at: datetime | None = None
     task_count: int = Field(
         default=0,
         ge=0,

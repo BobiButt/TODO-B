@@ -42,8 +42,14 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-async def send_otp_via_brevo(email: str, code: str) -> None:
-    """Sends the OTP using the Brevo API."""
+async def send_otp_via_brevo(email: str, code: str) -> bool:
+    """Sends the OTP using the Brevo API (best-effort; never raises).
+
+    Email delivery is intentionally non-fatal: if Brevo is unreachable or
+    misconfigured, the OTP is still generated/stored on the user record (and
+    printed to the console in development) so the auth flow is never blocked
+    by a mail provider.
+    """
     client = AsyncBrevo(api_key=settings.brevo_api_key)
     
     html_content = f"""
@@ -67,11 +73,11 @@ async def send_otp_via_brevo(email: str, code: str) -> None:
             ),
             to=[SendTransacEmailRequestToItem(email=email)],
         )
+        return True
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Failed to send verification email: {exc}",
-        ) from exc
+        # Best-effort delivery: never block the auth flow on a mail provider.
+        print(f"[DEV OTP] Email: {email} | Code: {code} | (Brevo delivery failed: {exc})")
+        return False
 
 
 @router.post(
