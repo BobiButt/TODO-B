@@ -260,7 +260,13 @@ async def google_auth(
         idinfo = id_token.verify_oauth2_token(
             payload.credential, google_requests.Request(), settings.google_client_id
         )
-    except Exception:
+    except Exception as exc:
+        # Log the real reason (audience mismatch, expired token, wrong issuer, etc.)
+        # so debugging doesn't require access to Vercel function logs.
+        print(f"[GOOGLE AUTH] ID token verification failed: {exc}")
+        print(
+            f"[GOOGLE AUTH] configured client_id={settings.google_client_id!r}"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Google ID token.",
