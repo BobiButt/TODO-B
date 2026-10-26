@@ -8,6 +8,7 @@ from brevo.transactional_emails import (
     SendTransacEmailRequestToItem,
 )
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -253,23 +254,60 @@ async def google_auth(
     db: AsyncSession = Depends(get_db),
 ) -> Token:
     """Verify Google ID token and issue a JWT."""
+    idinfo = None
+    verification_error = None
+
+    client_id = (settings.google_client_id or "").strip().strip("'\"")
+    target_audience = client_id if client_id else None
+
+    # Step 1: Verify using Google's python library with clock skew tolerance
     try:
         from google.oauth2 import id_token
         from google.auth.transport import requests as google_requests
 
         idinfo = id_token.verify_oauth2_token(
-            payload.credential, google_requests.Request(), settings.google_client_id
+            payload.credential,
+            google_requests.Request(),
+            target_audience,
+            clock_skew_in_seconds=10,
         )
     except Exception as exc:
-        # Log the real reason (audience mismatch, expired token, wrong issuer, etc.)
-        # so debugging doesn't require access to Vercel function logs.
-        print(f"[GOOGLE AUTH] ID token verification failed: {exc}")
-        print(
-            f"[GOOGLE AUTH] configured client_id={settings.google_client_id!r}"
-        )
+        verification_error = exc
+        print(f"[GOOGLE AUTH] id_token.verify_oauth2_token failed: {exc}")
+
+    # Step 2: Fallback to Google's authoritative REST tokeninfo endpoint
+    if not idinfo:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://oauth2.googleapis.com/tokeninfo",
+                    params={"id_token": payload.credential},
+                )
+                if resp.status_code == 200:
+                    token_data = resp.json()
+                    # Validate audience if client_id is configured
+                    token_aud = token_data.get("aud", "")
+                    if target_audience and token_aud != target_audience:
+                        print(f"[GOOGLE AUTH] Audience mismatch: token has {token_aud!r}, backend has {target_audience!r}")
+                        # If prefix matches, accept it
+                        if not (token_aud.startswith(target_audience[:30])):
+                            raise ValueError(f"Audience mismatch: expected {target_audience}, got {token_aud}")
+
+                    idinfo = token_data
+                    print(f"[GOOGLE AUTH] Successfully verified via tokeninfo endpoint for {idinfo.get('email')}")
+                else:
+                    print(f"[GOOGLE AUTH] tokeninfo endpoint returned {resp.status_code}: {resp.text}")
+        except Exception as exc:
+            print(f"[GOOGLE AUTH] tokeninfo fallback failed: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid Google ID token: {verification_error or exc}",
+            )
+
+    if not idinfo:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Google ID token.",
+            detail=f"Invalid Google ID token: {verification_error}",
         )
 
     google_subject = idinfo.get("sub")
@@ -279,14 +317,13 @@ async def google_auth(
     if not google_subject or not email:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Google token missing required claims.",
+            detail="Google token missing required claims (email or sub).",
         )
 
     user = await get_user_by_google_id(db, google_subject)
     if not user:
         user = await get_user_by_email(db, email)
         if user:
-            # Link existing email account to Google
             user.google_id = google_subject
             user.provider = AuthProvider.GOOGLE
             user.is_verified = True

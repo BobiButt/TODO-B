@@ -201,6 +201,13 @@ class Settings(BaseSettings):
     def _normalize_db_ssl(cls, value: Any) -> Any:
         return value.strip().lower() if isinstance(value, str) else value
 
+    @field_validator("google_client_id", mode="before")
+    @classmethod
+    def _clean_google_client_id(cls, value: Any) -> str:
+        if isinstance(value, str):
+            return value.strip().strip("'\"")
+        return ""
+
     @property
     def config_errors(self) -> list[str]:
         """list[str]: Human-readable description of every missing setting."""
