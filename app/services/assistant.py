@@ -714,7 +714,14 @@ async def chat(
                     response_message = await _provider_request(
                         client, url, api_key, model, request_messages, tools
                     )
-                except (ProviderError, httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
+                except Exception as exc:
+                    # Catch ProviderError, httpx/transport errors, JSON/shape
+                    # issues, and any unexpected failure so the fallback chain
+                    # can try the next configured provider.
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
                     record_attempt(
                         diagnostics,
                         provider=name,

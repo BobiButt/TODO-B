@@ -506,9 +506,6 @@ async def update_task(
     if payload.position is not None:
         task.position = payload.position
 
-    await db.commit()
-    await db.refresh(task)
-
     # Log activity.
     await log_activity(
         db=db,
@@ -519,6 +516,7 @@ async def update_task(
         detail={"title": task.title, "status": task.status},
     )
     await db.commit()
+    await db.refresh(task)
 
     return _map_task_to_read(task)
 
@@ -678,9 +676,6 @@ async def toggle_task_status(
     else:
         task.status = Status.COMPLETED.value
 
-    await db.commit()
-    await db.refresh(task)
-
     # Log activity.
     await log_activity(
         db=db,
@@ -691,6 +686,7 @@ async def toggle_task_status(
         detail={"new_status": task.status},
     )
     await db.commit()
+    await db.refresh(task)
 
     return _map_task_to_read(task)
 
