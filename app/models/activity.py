@@ -60,12 +60,12 @@ class ActivityLog(Base):
         # of silently un-filterable log entries.
         CheckConstraint(
             "action IN ('created','updated','deleted','restored','toggled',"
-            "'reordered','imported','exported','login_as')",
+            "'reordered','imported','exported','login_as','failed')",
             name="ck_activity_action",
         ),
         # Same idea for the entity being acted upon:
         CheckConstraint(
-            "entity_type IN ('task','comment','user','export','import')",
+            "entity_type IN ('task','comment','user','export','import','chat','system')",
             name="ck_activity_entity_type",
         ),
         # Newest-first sorting is THE access pattern of the activity page, so

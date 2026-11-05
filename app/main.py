@@ -19,6 +19,7 @@ from app.routers.assistant import router as assistant_router
 from app.routers.auth import router as auth_router
 from app.routers.comments import router as comments_router
 from app.routers.image import router as image_router
+from app.routers.logs import router as logs_router
 from app.routers.tasks import router as tasks_router
 from app.routers.transfer import router as transfer_router
 from app.routers.users import router as users_router
@@ -167,6 +168,7 @@ app.include_router(comments_router, prefix=settings.app_prefix)
 app.include_router(admin_router, prefix=settings.app_prefix)
 app.include_router(assistant_router, prefix=settings.app_prefix)
 app.include_router(image_router, prefix=settings.app_prefix)
+app.include_router(logs_router, prefix=settings.app_prefix)
 
 app.add_api_route(
     f"{settings.app_prefix}/health",

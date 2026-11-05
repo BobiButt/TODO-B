@@ -25,9 +25,10 @@ from app.models.task import Task            # tasks table
 from app.models.subtask import Subtask      # subtasks (checklist items)
 from app.models.comment import Comment      # task comments
 from app.models.activity import ActivityLog  # admin audit trail
+from app.models.chat import ChatMessage      # persisted assistant chat
 
 # __all__ defines what `from app.models import *` gives the caller, and acts as
-# a checklist: five tables exist, five names are exported.
+# a checklist.
 __all__ = [
     "Base",
     "User",
@@ -35,4 +36,5 @@ __all__ = [
     "Subtask",
     "Comment",
     "ActivityLog",
+    "ChatMessage",
 ]
